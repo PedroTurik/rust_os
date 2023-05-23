@@ -119,16 +119,6 @@ impl fmt::Write for Writer {
 
 pub fn print_something(){
     use core::fmt::Write;
-
-    let p = 0xb8300 as *mut ScreenChar;
-
-    unsafe {
-        *p = ScreenChar{
-            ascii_char: 0x30,
-            color: ColorCode::new(Color::Blue, Color::Brown)
-        };
-    }
-        
         
     let mut writer = Writer {
         column_position: 0,
