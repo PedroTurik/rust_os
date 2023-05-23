@@ -1,8 +1,9 @@
-
 #![allow(dead_code)]
 
 use volatile::Volatile;
 use core::fmt;
+use spin::Mutex;
+use lazy_static::lazy_static;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -42,6 +43,7 @@ struct ScreenChar{
     color: ColorCode
 }
 
+
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
@@ -68,9 +70,10 @@ impl Writer {
                 let row = BUFFER_HEIGHT - 1;
                 let col = self.column_position;
 
-                self.buffer.chars[row][col].write(ScreenChar {
-                    ascii_char: byte,
-                    color: self.color_code,
+                self.buffer.chars[row][col].write(
+                    ScreenChar {
+                        ascii_char: byte,
+                        color: self.color_code,
                 });
 
                 self.column_position += 1;    
@@ -96,15 +99,20 @@ impl Writer {
     fn new_line(&mut self){
         for i in 0..BUFFER_HEIGHT-1{
             for j in 0..BUFFER_WIDTH{
-                self.buffer.chars[i][j] = self.buffer.chars[i+1][j].clone();
+                self.buffer.chars[i][j].write(self.buffer.chars[i+1][j].read());
             }
         }
 
-        for i in 0..BUFFER_WIDTH{
-            self.buffer.chars[BUFFER_HEIGHT-1][i].write(ScreenChar{ ascii_char: 0, color: ColorCode(0) });
-        }
-
+        self.clear_row(BUFFER_HEIGHT - 1);
+        
         self.column_position = 0;
+    }
+    
+    fn clear_row(&mut self, row: usize){
+        for i in 0..BUFFER_WIDTH{
+            self.buffer.chars[row][i].write(ScreenChar{ ascii_char: b' ', color: self.color_code });
+        }
+        
     }
     
 }
@@ -117,18 +125,30 @@ impl fmt::Write for Writer {
     }
 }
 
-pub fn print_something(){
-    use core::fmt::Write;
-        
-    let mut writer = Writer {
+
+lazy_static! {
+    pub static ref WRITER: Mutex<Writer> = Mutex::new( Writer { 
         column_position: 0,
-        color_code: ColorCode::new(Color::Green, Color::Black),
-        buffer: unsafe {&mut *(0xb8000 as *mut Buffer)}
-    };
-
-
-    write!(writer, "    Ola, Mundo").unwrap();
-
-    
+        color_code: ColorCode::new(Color::White, Color::Black), 
+        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) }
+    });
 }
 
+
+#[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+}
+
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    use core::fmt::Write;
+    WRITER.lock().write_fmt(args).unwrap();
+}
